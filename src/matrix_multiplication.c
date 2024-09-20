@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "timing.h"
+#include <omp.h>
 
 DenseMatrix* multiply_matrices(const CompressedMatrix* A, const CompressedMatrix* B) {
     if (A->num_cols != B->num_rows) {
@@ -23,6 +24,7 @@ DenseMatrix* multiply_matrices(const CompressedMatrix* A, const CompressedMatrix
     TICK(multiply_time);
 
     // Perform matrix multiplication
+    #pragma omp parallel for schedule(dynamic)
     for (size_t i = 0; i < A->num_rows; i++) {
         for (size_t k = 0; k < A->row_sizes[i]; k++) {
             int a_val = A->B[i][k];
@@ -31,6 +33,7 @@ DenseMatrix* multiply_matrices(const CompressedMatrix* A, const CompressedMatrix
             for (size_t j = 0; j < B->row_sizes[a_col]; j++) {
                 size_t b_col = B->C[a_col][j];
                 int b_val = B->B[a_col][j];
+                # pragma omp atomic
                 result->data[i][b_col] += a_val * b_val;
             }
         }

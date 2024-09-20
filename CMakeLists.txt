@@ -13,7 +13,7 @@ add_executable(matrix_project
         src/matrix_compression.c
         src/matrix_multiplication.c
         tests/matrix_verification.c
-        src/timing.h
+        include/timing.h
 )
 
 # Create the test executable
