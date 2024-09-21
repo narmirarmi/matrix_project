@@ -160,26 +160,16 @@ int main() {
 
     printf("Starting matrix multiplication test...\n");
 
-    // Get the path to the project root directory (parent of build)
-    char project_root[1024];
-    if (getcwd(project_root, sizeof(project_root)) == NULL) {
-        perror("getcwd");
-        return 1;
-    }
-    char *build_pos = strstr(project_root, "/build");
-    if (build_pos != NULL) {
-        *build_pos = '\0';  // Truncate at "/build"
-    }
+    // Use a known persistent directory for logging
+    const char* scratch_dir = "/scratch/courses0101/mslater/imrans/matrix_project/logs";
 
-    // Create logs directory in the project root
-    char logs_dir[1024];
-    snprintf(logs_dir, sizeof(logs_dir), "%s/logs", project_root);
-    if (create_directory(logs_dir) != 0) {
+    // Create logs directory if it doesn't exist
+    if (create_directory(scratch_dir) != 0) {
         fprintf(stderr, "Failed to create logs directory\n");
         return 1;
     }
 
-    char *base_dir = generate_unique_directory(logs_dir);
+    char *base_dir = generate_unique_directory(scratch_dir);
     if (base_dir == NULL) {
         fprintf(stderr, "Failed to generate unique directory name\n");
         return 1;
