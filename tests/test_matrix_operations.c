@@ -98,19 +98,6 @@ void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, flo
         return;
     }
 
-    char performance_file[512];
-    snprintf(performance_file, sizeof(performance_file), "%s/performance.txt", log_dir);
-
-    FILE* perf_file = fopen(performance_file, "w");
-    if (perf_file == NULL) {
-        fprintf(stderr, "Error opening performance file %s: %s\n", performance_file, strerror(errno));
-        return;
-    }
-
-    fprintf(perf_file, "Matrix A: %d x %d\n", rows_a, cols_a);
-    fprintf(perf_file, "Matrix B: %d x %d\n", cols_a, cols_b);
-    fprintf(perf_file, "Density: %.2f\n\n", density);
-
     printf("Generating and compressing matrices...\n");
 
     // Generate and compress matrices
@@ -126,47 +113,45 @@ void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, flo
     int max_threads = omp_get_max_threads();
     printf("Maximum number of threads available: %d\n", max_threads);
 
+    // Create and open the performance file
+    char performance_file[512];
+    snprintf(performance_file, sizeof(performance_file), "%s/performance_%dx%dx%d_%.2f.csv",
+             log_dir, rows_a, cols_a, cols_b, density);
+
+    FILE* perf_file = fopen(performance_file, "w");
+    if (perf_file == NULL) {
+        fprintf(stderr, "Error opening performance file %s: %s\n", performance_file, strerror(errno));
+        return;
+    }
+
+    // Write header information
+    fprintf(perf_file, "Matrix A: %d x %d\n", rows_a, cols_a);
+    fprintf(perf_file, "Matrix B: %d x %d\n", cols_a, cols_b);
+    fprintf(perf_file, "Density: %.2f\n\n", density);
+    fprintf(perf_file, "Threads,CPU Time (s),Wall Clock Time (s)\n");
+    fflush(perf_file);  // Flush the file buffer to ensure data is written
+
     // Test with different numbers of threads, starting from the highest
     for (int num_threads = max_threads; num_threads >= 1; num_threads /= 2) {
-        char performance_file[512];
-        snprintf(performance_file, sizeof(performance_file), "%s/performance_%dx%dx%d_%.2f_threads_%d.csv",
-                 log_dir, rows_a, cols_a, cols_b, density, num_threads);
-
-        FILE* perf_file = fopen(performance_file, "w");
-        if (perf_file == NULL) {
-            fprintf(stderr, "Error opening performance file %s: %s\n", performance_file, strerror(errno));
-            continue;
-        }
-
-        fprintf(perf_file, "Matrix A: %d x %d\n", rows_a, cols_a);
-        fprintf(perf_file, "Matrix B: %d x %d\n", cols_a, cols_b);
-        fprintf(perf_file, "Density: %.2f\n", density);
-        fprintf(perf_file, "Threads: %d\n\n", num_threads);
-
-        fprintf(perf_file, "Iteration,CPU Time (s),Wall Clock Time (s)\n");
-
         omp_set_num_threads(num_threads);
 
         printf("Testing with %d thread(s)...\n", num_threads);
 
-        // Run the multiplication multiple times for more reliable results
-        for (int iteration = 1; iteration <= 5; iteration++) {
-            TICK(multiply_time);
-            DenseMatrix* result = multiply_matrices(compressed_a, compressed_b);
-            TOCK(multiply_time);
+        TICK(multiply_time);
+        DenseMatrix* result = multiply_matrices(compressed_a, compressed_b);
+        TOCK(multiply_time);
 
-            // Log results in CSV format
-            fprintf(perf_file, "%d,%.6f,%.6f\n", iteration, multiply_time.cpu_time, multiply_time.wall_time);
+        // Log results in CSV format
+        fprintf(perf_file, "%d,%.6f,%.6f\n", num_threads, multiply_time.cpu_time, multiply_time.wall_time);
+        fflush(perf_file);  // Flush the file buffer to ensure data is written immediately
 
-            // Clean up result
-            free_dense_matrix(result);
+        // Clean up result
+        free_dense_matrix(result);
 
-            printf("Iteration %d completed for %d threads\n", iteration, num_threads);
-        }
-
-        fclose(perf_file);
-        printf("Performance data for %d threads written to %s\n", num_threads, performance_file);
+        printf("Completed test for %d threads. Results written to %s\n", num_threads, performance_file);
     }
+
+    fclose(perf_file);
 
     // Clean up
     free_compressed_matrix(compressed_a);
