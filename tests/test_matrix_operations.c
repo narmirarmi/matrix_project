@@ -124,33 +124,53 @@ void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, flo
 
     // Get maximum number of threads
     int max_threads = omp_get_max_threads();
-    fprintf(perf_file, "Maximum number of threads available: %d\n\n", max_threads);
     printf("Maximum number of threads available: %d\n", max_threads);
 
-    // CSV header for easy data extraction
-    fprintf(perf_file, "Threads,CPU Time (s),Wall Clock Time (s)\n");
+    // Test with different numbers of threads, starting from the highest
+    for (int num_threads = max_threads; num_threads >= 1; num_threads /= 2) {
+        char performance_file[512];
+        snprintf(performance_file, sizeof(performance_file), "%s/performance_%dx%dx%d_%.2f_threads_%d.csv",
+                 log_dir, rows_a, cols_a, cols_b, density, num_threads);
 
-    // Test with different numbers of threads
-    for (int num_threads = 1; num_threads <= max_threads; num_threads *= 2) {
+        FILE* perf_file = fopen(performance_file, "w");
+        if (perf_file == NULL) {
+            fprintf(stderr, "Error opening performance file %s: %s\n", performance_file, strerror(errno));
+            continue;
+        }
+
+        fprintf(perf_file, "Matrix A: %d x %d\n", rows_a, cols_a);
+        fprintf(perf_file, "Matrix B: %d x %d\n", cols_a, cols_b);
+        fprintf(perf_file, "Density: %.2f\n", density);
+        fprintf(perf_file, "Threads: %d\n\n", num_threads);
+
+        fprintf(perf_file, "Iteration,CPU Time (s),Wall Clock Time (s)\n");
+
         omp_set_num_threads(num_threads);
 
         printf("Testing with %d thread(s)...\n", num_threads);
 
-        TICK(multiply_time);
-        DenseMatrix* result = multiply_matrices(compressed_a, compressed_b);
-        TOCK(multiply_time);
+        // Run the multiplication multiple times for more reliable results
+        for (int iteration = 1; iteration <= 5; iteration++) {
+            TICK(multiply_time);
+            DenseMatrix* result = multiply_matrices(compressed_a, compressed_b);
+            TOCK(multiply_time);
 
-        // Log results in CSV format
-        fprintf(perf_file, "%d,%.6f,%.6f\n", num_threads, multiply_time.cpu_time, multiply_time.wall_time);
+            // Log results in CSV format
+            fprintf(perf_file, "%d,%.6f,%.6f\n", iteration, multiply_time.cpu_time, multiply_time.wall_time);
 
-        // Clean up result
-        free_dense_matrix(result);
+            // Clean up result
+            free_dense_matrix(result);
+
+            printf("Iteration %d completed for %d threads\n", iteration, num_threads);
+        }
+
+        fclose(perf_file);
+        printf("Performance data for %d threads written to %s\n", num_threads, performance_file);
     }
 
     // Clean up
     free_compressed_matrix(compressed_a);
     free_compressed_matrix(compressed_b);
-    fclose(perf_file);
 
     printf("Test completed for matrix size %dx%dx%d with density %.2f\n", rows_a, cols_a, cols_b, density);
 }
@@ -203,7 +223,7 @@ int main() {
     test_parallel_matrix_multiplication(1000, 1000, 1000, 0.01, run_dir_path);
 
     // Uncomment these lines to test with project requirement matrices
-    // test_parallel_matrix_multiplication(10000, 100000, 100000, 0.01, run_dir_path);
+    // test_parallel_matrix_multiplication(100000, 100000, 100000, 0.01, run_dir_path);
     // test_parallel_matrix_multiplication(100000, 100000, 100000, 0.02, run_dir_path);
     // test_parallel_matrix_multiplication(100000, 100000, 100000, 0.05, run_dir_path);
 
