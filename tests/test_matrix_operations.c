@@ -11,12 +11,34 @@
 #include "matrix_multiplication.h"
 #include "timing.h"
 
-// Function to create directories
-void create_directory(const char* path) {
+// Function to create directories with logging
+int create_directory(const char* path) {
     struct stat st = {0};
     if (stat(path, &st) == -1) {
-        mkdir(path, 0700);
+        if (mkdir(path, 0700) == -1) {
+            fprintf(stderr, "Error creating directory %s: %s\n", path, strerror(errno));
+            return -1;
+        }
+        printf("Created new directory: %s\n", path);
+    } else {
+        printf("Using existing directory: %s\n", path);
     }
+    return 0;
+}
+
+// Function to generate a unique directory name
+char* generate_unique_directory(const char* base_path) {
+    time_t t = time(NULL);
+    struct tm *tm = localtime(&t);
+    char *unique_dir = malloc(512 * sizeof(char));
+    if (unique_dir == NULL) {
+        fprintf(stderr, "Memory allocation failed\n");
+        return NULL;
+    }
+    snprintf(unique_dir, 512, "%s_%04d%02d%02d_%02d%02d%02d",
+             base_path, tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
+             tm->tm_hour, tm->tm_min, tm->tm_sec);
+    return unique_dir;
 }
 
 // Function to generate a random dense matrix
@@ -59,49 +81,37 @@ CompressedMatrix* compress_matrix_and_write(int** matrix, size_t rows, size_t co
 
 // Function to test parallel matrix multiplication with logging
 void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, float density, const char* base_dir) {
-    char log_dir[256];
+    char log_dir[512];
     snprintf(log_dir, sizeof(log_dir), "%s/matrix_multiplication_%dx%dx%d_%.2f", base_dir, rows_a, cols_a, cols_b, density);
 
-    // Try to create directory and check if successful
-    if (mkdir(log_dir, 0700) != 0 && errno != EEXIST) {
-        fprintf(stderr, "Error creating directory %s: %s\n", log_dir, strerror(errno));
+    if (create_directory(log_dir) != 0) {
+        fprintf(stderr, "Error creating log directory %s\n", log_dir);
         return;
     }
 
-    char matrix_a_dir[256], matrix_b_dir[256];
+    char matrix_a_dir[512], matrix_b_dir[512];
     snprintf(matrix_a_dir, sizeof(matrix_a_dir), "%s/matrix_a", log_dir);
     snprintf(matrix_b_dir, sizeof(matrix_b_dir), "%s/matrix_b", log_dir);
 
-    // Try to create directories and check if successful
-    if ((mkdir(matrix_a_dir, 0700) != 0 && errno != EEXIST) ||
-        (mkdir(matrix_b_dir, 0700) != 0 && errno != EEXIST)) {
-        fprintf(stderr, "Error creating matrix directories: %s\n", strerror(errno));
+    if (create_directory(matrix_a_dir) != 0 || create_directory(matrix_b_dir) != 0) {
+        fprintf(stderr, "Error creating matrix directories\n");
         return;
     }
 
-    char performance_file[256];
+    char performance_file[512];
     snprintf(performance_file, sizeof(performance_file), "%s/performance.txt", log_dir);
 
-    // Try to open performance file
     FILE* perf_file = fopen(performance_file, "w");
     if (perf_file == NULL) {
         fprintf(stderr, "Error opening performance file %s: %s\n", performance_file, strerror(errno));
-        perror("fopen");
         return;
     }
-
-    // Print current working directory and full path of performance file
-    char cwd[1024];
-    if (getcwd(cwd, sizeof(cwd)) != NULL) {
-        fprintf(stderr, "Current working directory: %s\n", cwd);
-    } else {
-        perror("getcwd");
-    }
-    fprintf(stderr, "Attempting to write to file: %s\n", performance_file);
 
     fprintf(perf_file, "Matrix A: %d x %d\n", rows_a, cols_a);
     fprintf(perf_file, "Matrix B: %d x %d\n", cols_a, cols_b);
     fprintf(perf_file, "Density: %.2f\n\n", density);
+
+    printf("Generating and compressing matrices...\n");
 
     // Generate and compress matrices
     int** dense_a = generate_random_matrix(rows_a, cols_a, density);
@@ -115,6 +125,7 @@ void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, flo
     // Get maximum number of threads
     int max_threads = omp_get_max_threads();
     fprintf(perf_file, "Maximum number of threads available: %d\n\n", max_threads);
+    printf("Maximum number of threads available: %d\n", max_threads);
 
     // CSV header for easy data extraction
     fprintf(perf_file, "Threads,CPU Time (s),Wall Clock Time (s)\n");
@@ -122,6 +133,8 @@ void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, flo
     // Test with different numbers of threads
     for (int num_threads = 1; num_threads <= max_threads; num_threads *= 2) {
         omp_set_num_threads(num_threads);
+
+        printf("Testing with %d thread(s)...\n", num_threads);
 
         TICK(multiply_time);
         DenseMatrix* result = multiply_matrices(compressed_a, compressed_b);
@@ -138,36 +151,53 @@ void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, flo
     free_compressed_matrix(compressed_a);
     free_compressed_matrix(compressed_b);
     fclose(perf_file);
+
+    printf("Test completed for matrix size %dx%dx%d with density %.2f\n", rows_a, cols_a, cols_b, density);
 }
 
 int main() {
     srand(time(NULL));  // Seed the random number generator
 
-    char base_dir[256];
-    time_t t = time(NULL);
-    struct tm *tm = localtime(&t);
-    snprintf(base_dir, sizeof(base_dir), "proj/logging/matrix_multiplication_%02d%02d%d",
-             tm->tm_mday, tm->tm_mon + 1, tm->tm_year + 1900);
-    create_directory("proj");
-    create_directory("proj/logging");
-    create_directory(base_dir);
+    printf("Starting matrix multiplication test...\n");
+
+    // Create base directories
+    if (create_directory("proj") != 0 ||
+        create_directory("proj/logging") != 0) {
+        fprintf(stderr, "Failed to create base directories\n");
+        return 1;
+    }
+
+    char *base_dir = generate_unique_directory("proj/logging/matrix_multiplication");
+    if (base_dir == NULL) {
+        fprintf(stderr, "Failed to generate unique directory name\n");
+        return 1;
+    }
+
+    if (create_directory(base_dir) != 0) {
+        fprintf(stderr, "Failed to create test directory\n");
+        free(base_dir);
+        return 1;
+    }
 
     // Print the full path of the base directory
     char full_path[1024];
     if (realpath(base_dir, full_path) != NULL) {
-        printf("Full path of base directory: %s\n", full_path);
+        printf("Full path of test directory: %s\n", full_path);
     } else {
         perror("realpath");
     }
 
+    printf("Beginning matrix multiplication tests...\n");
+
     test_parallel_matrix_multiplication(1000, 1000, 1000, 0.01, base_dir);
 
-    // Test with project requirement matrices
+    // Uncomment these lines to test with project requirement matrices
     // test_parallel_matrix_multiplication(10000, 100000, 100000, 0.01, base_dir);
     // test_parallel_matrix_multiplication(100000, 100000, 100000, 0.02, base_dir);
     // test_parallel_matrix_multiplication(100000, 100000, 100000, 0.05, base_dir);
 
-    printf("Testing completed. Results written to %s\n", base_dir);
+    printf("All tests completed. Results written to %s\n", base_dir);
 
+    free(base_dir);
     return 0;
 }
