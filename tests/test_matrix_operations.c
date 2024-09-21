@@ -179,32 +179,36 @@ int main() {
         return 1;
     }
 
-    char *base_dir = generate_unique_directory(logs_dir);
-    if (base_dir == NULL) {
+    // Generate unique directory name for this run
+    char *run_dir_name = generate_unique_directory("run");
+    if (run_dir_name == NULL) {
         fprintf(stderr, "Failed to generate unique directory name\n");
         return 1;
     }
 
-    if (create_directory(base_dir) != 0) {
-        fprintf(stderr, "Failed to create test directory\n");
-        free(base_dir);
+    // Create the full path for the run directory
+    char run_dir_path[1024];
+    snprintf(run_dir_path, sizeof(run_dir_path), "%s/%s", logs_dir, run_dir_name);
+    if (create_directory(run_dir_path) != 0) {
+        fprintf(stderr, "Failed to create run directory\n");
+        free(run_dir_name);
         return 1;
     }
 
-    // Print the full path of the base directory
-    printf("Full path of test directory: %s\n", base_dir);
+    // Print the full path of the run directory
+    printf("Full path of test directory: %s\n", run_dir_path);
 
     printf("Beginning matrix multiplication tests...\n");
 
-    test_parallel_matrix_multiplication(1000, 1000, 1000, 0.01, base_dir);
+    test_parallel_matrix_multiplication(1000, 1000, 1000, 0.01, run_dir_path);
 
     // Uncomment these lines to test with project requirement matrices
-    // test_parallel_matrix_multiplication(10000, 100000, 100000, 0.01, base_dir);
-    // test_parallel_matrix_multiplication(100000, 100000, 100000, 0.02, base_dir);
-    // test_parallel_matrix_multiplication(100000, 100000, 100000, 0.05, base_dir);
+    // test_parallel_matrix_multiplication(10000, 100000, 100000, 0.01, run_dir_path);
+    // test_parallel_matrix_multiplication(100000, 100000, 100000, 0.02, run_dir_path);
+    // test_parallel_matrix_multiplication(100000, 100000, 100000, 0.05, run_dir_path);
 
-    printf("All tests completed. Results written to %s\n", base_dir);
+    printf("All tests completed. Results written to %s\n", run_dir_path);
 
-    free(base_dir);
+    free(run_dir_name);
     return 0;
 }
