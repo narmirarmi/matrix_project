@@ -61,21 +61,43 @@ CompressedMatrix* compress_matrix_and_write(int** matrix, size_t rows, size_t co
 void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, float density, const char* base_dir) {
     char log_dir[256];
     snprintf(log_dir, sizeof(log_dir), "%s/matrix_multiplication_%dx%dx%d_%.2f", base_dir, rows_a, cols_a, cols_b, density);
-    create_directory(log_dir);
+
+    // Try to create directory and check if successful
+    if (mkdir(log_dir, 0700) != 0 && errno != EEXIST) {
+        fprintf(stderr, "Error creating directory %s: %s\n", log_dir, strerror(errno));
+        return;
+    }
 
     char matrix_a_dir[256], matrix_b_dir[256];
     snprintf(matrix_a_dir, sizeof(matrix_a_dir), "%s/matrix_a", log_dir);
     snprintf(matrix_b_dir, sizeof(matrix_b_dir), "%s/matrix_b", log_dir);
-    create_directory(matrix_a_dir);
-    create_directory(matrix_b_dir);
+
+    // Try to create directories and check if successful
+    if ((mkdir(matrix_a_dir, 0700) != 0 && errno != EEXIST) ||
+        (mkdir(matrix_b_dir, 0700) != 0 && errno != EEXIST)) {
+        fprintf(stderr, "Error creating matrix directories: %s\n", strerror(errno));
+        return;
+    }
 
     char performance_file[256];
     snprintf(performance_file, sizeof(performance_file), "%s/performance.txt", log_dir);
+
+    // Try to open performance file
     FILE* perf_file = fopen(performance_file, "w");
     if (perf_file == NULL) {
-        fprintf(stderr, "Error opening performance file: %s\n", strerror(errno));
+        fprintf(stderr, "Error opening performance file %s: %s\n", performance_file, strerror(errno));
+        perror("fopen");
         return;
     }
+
+    // Print current working directory and full path of performance file
+    char cwd[1024];
+    if (getcwd(cwd, sizeof(cwd)) != NULL) {
+        fprintf(stderr, "Current working directory: %s\n", cwd);
+    } else {
+        perror("getcwd");
+    }
+    fprintf(stderr, "Attempting to write to file: %s\n", performance_file);
 
     fprintf(perf_file, "Matrix A: %d x %d\n", rows_a, cols_a);
     fprintf(perf_file, "Matrix B: %d x %d\n", cols_a, cols_b);
@@ -129,6 +151,14 @@ int main() {
     create_directory("proj");
     create_directory("proj/logging");
     create_directory(base_dir);
+
+    // Print the full path of the base directory
+    char full_path[1024];
+    if (realpath(base_dir, full_path) != NULL) {
+        printf("Full path of base directory: %s\n", full_path);
+    } else {
+        perror("realpath");
+    }
 
     test_parallel_matrix_multiplication(1000, 1000, 1000, 0.01, base_dir);
 
