@@ -160,14 +160,26 @@ int main() {
 
     printf("Starting matrix multiplication test...\n");
 
-    // Create base directories
-    if (create_directory("proj") != 0 ||
-        create_directory("proj/logging") != 0) {
-        fprintf(stderr, "Failed to create base directories\n");
+    // Get the path to the project root directory (parent of build)
+    char project_root[1024];
+    if (getcwd(project_root, sizeof(project_root)) == NULL) {
+        perror("getcwd");
+        return 1;
+    }
+    char *build_pos = strstr(project_root, "/build");
+    if (build_pos != NULL) {
+        *build_pos = '\0';  // Truncate at "/build"
+    }
+
+    // Create logs directory in the project root
+    char logs_dir[1024];
+    snprintf(logs_dir, sizeof(logs_dir), "%s/logs", project_root);
+    if (create_directory(logs_dir) != 0) {
+        fprintf(stderr, "Failed to create logs directory\n");
         return 1;
     }
 
-    char *base_dir = generate_unique_directory("proj/logging/matrix_multiplication");
+    char *base_dir = generate_unique_directory(logs_dir);
     if (base_dir == NULL) {
         fprintf(stderr, "Failed to generate unique directory name\n");
         return 1;
@@ -180,12 +192,7 @@ int main() {
     }
 
     // Print the full path of the base directory
-    char full_path[1024];
-    if (realpath(base_dir, full_path) != NULL) {
-        printf("Full path of test directory: %s\n", full_path);
-    } else {
-        perror("realpath");
-    }
+    printf("Full path of test directory: %s\n", base_dir);
 
     printf("Beginning matrix multiplication tests...\n");
 
