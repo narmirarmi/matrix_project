@@ -11,6 +11,7 @@
 #include "matrix_multiplication.h"
 #include "timing.h"
 
+
 // Function to create directories with logging
 int create_directory(const char* path) {
     struct stat st = {0};

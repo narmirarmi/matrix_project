@@ -1,8 +1,8 @@
 #ifndef MATRIX_GENERATION_H
 #define MATRIX_GENERATION_H
 
-#define ROWS 15
-#define COLS 15
+#define ROWS 100000
+#define COLS 100000
 
 // Function prototypes
 int** allocateMatrix(int rows, int cols);

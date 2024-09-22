@@ -12,7 +12,6 @@ add_executable(matrix_project
         src/matrix_generation.c
         src/matrix_compression.c
         src/matrix_multiplication.c
-        tests/matrix_verification.c
         include/timing.h
 )
 
@@ -25,7 +24,6 @@ add_executable(run_tests
 )
 
 add_executable(verify_multiplication
-        tests/matrix_verification.c
         src/matrix_generation.c
         src/matrix_compression.c
         src/matrix_multiplication.c
