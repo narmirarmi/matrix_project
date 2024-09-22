@@ -220,7 +220,7 @@ int main() {
 
     printf("Beginning matrix multiplication tests...\n");
 
-    test_parallel_matrix_multiplication(1000, 1000, 1000, 0.01, run_dir_path);
+    test_parallel_matrix_multiplication(10000, 10000, 10000     , 0.02, run_dir_path);
 
     // Uncomment these lines to test with project requirement matrices
     // test_parallel_matrix_multiplication(100000, 100000, 100000, 0.01, run_dir_path);
