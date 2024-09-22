@@ -109,54 +109,63 @@ void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, flo
     CompressedMatrix* compressed_b = compress_matrix_and_write(dense_b, cols_a, cols_b, density, matrix_b_dir);
     freeMatrix(dense_b, cols_a);
 
+    const char* schedule_names[] = {"static", "dynamic", "guided", "auto"};
+    ScheduleType schedule_types[] = {SCHEDULE_STATIC, SCHEDULE_DYNAMIC, SCHEDULE_GUIDED, SCHEDULE_AUTO};
+    int num_schedule_types = sizeof(schedule_types) / sizeof(schedule_types[0]);
+
     // Get maximum number of threads
     int max_threads = omp_get_max_threads();
     printf("Maximum number of threads available: %d\n", max_threads);
 
-    // Test with different numbers of threads, starting from the highest
+    // Test with different numbers of threads and scheduling types
     for (int num_threads = max_threads; num_threads >= 1; num_threads /= 2) {
-        char performance_file[512];
-        snprintf(performance_file, sizeof(performance_file), "%s/performance_%dx%dx%d_%.2f_threads_%d.csv",
-                 log_dir, rows_a, cols_a, cols_b, density, num_threads);
+        for (int s = 0; s < num_schedule_types; s++) {
+            char performance_file[512];
+            snprintf(performance_file, sizeof(performance_file), "%s/performance_%dx%dx%d_%.2f_threads_%d_%s.csv",
+                     log_dir, rows_a, cols_a, cols_b, density, num_threads, schedule_names[s]);
 
-        FILE* perf_file = fopen(performance_file, "w");
-        if (perf_file == NULL) {
-            fprintf(stderr, "Error opening performance file %s: %s\n", performance_file, strerror(errno));
-            continue;
-        }
-
-        fprintf(perf_file, "Matrix A: %d x %d\n", rows_a, cols_a);
-        fprintf(perf_file, "Matrix B: %d x %d\n", cols_a, cols_b);
-        fprintf(perf_file, "Density: %.2f\n", density);
-        fprintf(perf_file, "Threads: %d\n\n", num_threads);
-
-        fprintf(perf_file, "CPU Time (s),Wall Clock Time (s)\n");
-
-        // Explicitly set the number of threads for OpenMP
-        omp_set_num_threads(num_threads);
-
-        // Ensure the change takes effect
-        #pragma omp parallel
-        {
-            #pragma omp single
-            {
-                int actual_threads = omp_get_num_threads();
-                printf("Actually using %d thread(s) for density %.2f...\n", actual_threads, density);
+            FILE* perf_file = fopen(performance_file, "w");
+            if (perf_file == NULL) {
+                fprintf(stderr, "Error opening performance file %s: %s\n", performance_file, strerror(errno));
+                continue;
             }
+
+            fprintf(perf_file, "Matrix A: %d x %d\n", rows_a, cols_a);
+            fprintf(perf_file, "Matrix B: %d x %d\n", cols_a, cols_b);
+            fprintf(perf_file, "Density: %.2f\n", density);
+            fprintf(perf_file, "Threads: %d\n", num_threads);
+            fprintf(perf_file, "Schedule: %s\n\n", schedule_names[s]);
+
+            fprintf(perf_file, "CPU Time (s),Wall Clock Time (s)\n");
+
+            // Explicitly set the number of threads for OpenMP
+            omp_set_num_threads(num_threads);
+
+            // Ensure the change takes effect
+            #pragma omp parallel
+            {
+                #pragma omp single
+                {
+                    int actual_threads = omp_get_num_threads();
+                    printf("Actually using %d thread(s) for density %.2f with %s scheduling...\n",
+                           actual_threads, density, schedule_names[s]);
+                }
+            }
+
+            TICK(multiply_time);
+            DenseMatrix* result = multiply_matrices(compressed_a, compressed_b, schedule_types[s]);
+            TOCK(multiply_time);
+
+            // Log results in CSV format
+            fprintf(perf_file, "%.6f,%.6f\n", multiply_time.cpu_time, multiply_time.wall_time);
+
+            // Clean up result
+            free_dense_matrix(result);
+
+            fclose(perf_file);
+            printf("Performance data for %d threads with %s scheduling written to %s\n",
+                   num_threads, schedule_names[s], performance_file);
         }
-
-        TICK(multiply_time);
-        DenseMatrix* result = multiply_matrices(compressed_a, compressed_b);
-        TOCK(multiply_time);
-
-        // Log results in CSV format
-        fprintf(perf_file, "%.6f,%.6f\n", multiply_time.cpu_time, multiply_time.wall_time);
-
-        // Clean up result
-        free_dense_matrix(result);
-
-        fclose(perf_file);
-        printf("Performance data for %d threads written to %s\n", num_threads, performance_file);
     }
 
     // Clean up

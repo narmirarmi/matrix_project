@@ -4,6 +4,13 @@
 #include "matrix_compression.h"
 #include <stddef.h>
 
+typedef enum {
+    SCHEDULE_STATIC,
+    SCHEDULE_DYNAMIC,
+    SCHEDULE_GUIDED,
+    SCHEDULE_AUTO
+} ScheduleType;
+
 typedef struct {
     int** data;
     size_t rows;
@@ -12,7 +19,7 @@ typedef struct {
 
 // Function Prototypes
 // FUnction to multiply two compressed matrices and return a dense matrix
-DenseMatrix* multiply_matrices(const CompressedMatrix* A, const CompressedMatrix* B);
+DenseMatrix* multiply_matrices(const CompressedMatrix* A, const CompressedMatrix* B, ScheduleType schedule_type);
 
 // Function to free a dense matrix
 void free_dense_matrix(DenseMatrix* matrix);
