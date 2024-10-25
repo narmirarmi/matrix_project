@@ -1,8 +1,12 @@
 # TODO
 - Add timer for only multiplication of matrices
+- Adjust testing scripts to not vary num of cores.
 - Find Limits of Sequential in 10 mins, at all densities
 - Find Limits of OpenMP in 10 mins, at all densities
 - Find Limits of MPI in 10 mins, at all densities
+    - Implement MPI in matrix multiplication case
+    - Run tests
+    - Expect 20-40% worse performance than MPI
 
 
 - Write report
