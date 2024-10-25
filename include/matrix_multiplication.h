@@ -5,10 +5,9 @@
 #include <stddef.h>
 
 typedef enum {
-    SCHEDULE_STATIC,
-    SCHEDULE_DYNAMIC,
-    SCHEDULE_GUIDED,
-    SCHEDULE_AUTO
+    MULT_SEQUENTIAL,
+    MULT_OMP,
+    MULT_MPI,
 } ScheduleType;
 
 typedef struct {
