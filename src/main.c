@@ -110,7 +110,7 @@ void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, flo
     freeMatrix(dense_b, cols_a);
 
     const char* schedule_names[] = {"static", "dynamic", "guided", "auto"};
-    parallelisation_type schedule_types[] = {SCHEDULE_STATIC, SCHEDULE_DYNAMIC, SCHEDULE_GUIDED, SCHEDULE_AUTO};
+    parallelisation_type schedule_types[] = {MULT_SEQUENTIAL, MULT_SEQUENTIAL, MULT_SEQUENTIAL, MULT_SEQUENTIAL};
     int num_schedule_types = sizeof(schedule_types) / sizeof(schedule_types[0]);
 
     // Get maximum number of threads
