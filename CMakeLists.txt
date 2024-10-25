@@ -21,6 +21,8 @@ add_executable(run_tests
         src/matrix_generation.c
         src/matrix_compression.c
         src/matrix_multiplication.c
+        include/mpi_matrix_compression.h
+        src/mpi_matrix_compression.c
 )
 
 add_executable(verify_multiplication

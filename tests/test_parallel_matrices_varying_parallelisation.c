@@ -13,8 +13,8 @@
 
 #define MAX_TIME_SECONDS 650
 #define NUM_RUNS 1
-#define DEFAULT_DENSITY 0.05
-#define DEFAULT_SIZE 40000
+#define DEFAULT_DENSITY 0.01
+#define DEFAULT_SIZE 60000
 
 // Function to get parallelisation type name
 const char* get_parallelisation_name(parallelisation_type type) {
