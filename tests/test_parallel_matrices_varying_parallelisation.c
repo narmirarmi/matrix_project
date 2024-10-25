@@ -10,11 +10,59 @@
 #include "matrix_compression.h"
 #include "matrix_multiplication.h"
 #include "timing.h"
+#include <mpi.h>
+#include <limits.h>
+#include <libgen.h>
 
 #define MAX_TIME_SECONDS 650
 #define NUM_RUNS 1
 #define DEFAULT_DENSITY 0.01
-#define DEFAULT_SIZE 60000
+#define DEFAULT_SIZE 30000
+
+char* get_project_root() {
+    char* project_root = malloc(PATH_MAX * sizeof(char));
+    if (project_root == NULL) {
+        fprintf(stderr, "Memory allocation failed\n");
+        return NULL;
+    }
+
+    // Get the path to the current executable
+    char exec_path[PATH_MAX];
+    ssize_t len = readlink("/proc/self/exe", exec_path, sizeof(exec_path) - 1);
+    if (len == -1) {
+        fprintf(stderr, "Error getting executable path: %s\n", strerror(errno));
+        free(project_root);
+        return NULL;
+    }
+    exec_path[len] = '\0';
+
+    // Get the directory containing the executable
+    char* dir = dirname(exec_path);
+
+    // Navigate up to the project root (assuming the executable is in a build directory)
+    snprintf(project_root, PATH_MAX, "%s/../..", dir);
+
+    // Resolve the path to remove ../ components
+    char resolved_path[PATH_MAX];
+    if (realpath(project_root, resolved_path) == NULL) {
+        fprintf(stderr, "Error resolving path: %s\n", strerror(errno));
+        free(project_root);
+        return NULL;
+    }
+
+    strcpy(project_root, resolved_path);
+    return project_root;
+}
+
+void debug_print_paths(const char* label, const char* path) {
+    char resolved_path[PATH_MAX];
+    if (realpath(path, resolved_path) != NULL) {
+        printf("[DEBUG] %s (resolved): %s\n", label, resolved_path);
+    } else {
+        printf("[DEBUG] %s (raw): %s\n", label, path);
+        printf("[DEBUG] %s (error): %s\n", label, strerror(errno));
+    }
+}
 
 // Function to get parallelisation type name
 const char* get_parallelisation_name(parallelisation_type type) {
@@ -62,9 +110,7 @@ int** generate_random_matrix(int rows, int cols, float density) {
     return matrix;
 }
 
-CompressedMatrix* compress_matrix_and_write(int** matrix, size_t rows, size_t cols, float density, const char* dir_path) {
-    CompressedMatrix* compressed = compress_matrix(matrix, rows, cols, density);
-
+void write_compressed_matrix(CompressedMatrix* compressed, size_t rows, const char* dir_path) {
     char b_file_path[256];
     char c_file_path[256];
     snprintf(b_file_path, sizeof(b_file_path), "%s/B.txt", dir_path);
@@ -89,65 +135,99 @@ CompressedMatrix* compress_matrix_and_write(int** matrix, size_t rows, size_t co
 
     fclose(b_file);
     fclose(c_file);
-
-    return compressed;
 }
 
 void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, float density,
                                       const char* base_dir, parallelisation_type parallel_type) {
+    int rank = 0, size = 1;
+    if (parallel_type == MULT_MPI) {
+        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+        MPI_Comm_size(MPI_COMM_WORLD, &size);
+    }
+
+    // Seed the random number generator
+    srand(42);
+
     // Get parallelisation name for logging
     const char* parallel_name = get_parallelisation_name(parallel_type);
 
-    char log_dir[512];
-    snprintf(log_dir, sizeof(log_dir), "%s/matrix_multiplication_%dx%dx%d_%.2f_%s",
-             base_dir, rows_a, cols_a, cols_b, density, parallel_name);
+    // Define directory paths
+    char log_dir[512] = "";
+    char matrix_a_dir[512] = "";
+    char matrix_b_dir[512] = "";
 
-    if (create_directory(log_dir) != 0) {
-        fprintf(stderr, "Error creating log directory %s\n", log_dir);
-        return;
+    // Only the root process performs directory creation and file I/O
+    if (rank == 0) {
+        fprintf(stderr, "Root process here");
+
+        // Generate the log directory path
+        snprintf(log_dir, sizeof(log_dir), "%s/matrix_multiplication_%dx%dx%d_%.2f_%s",
+                 base_dir, rows_a, cols_a, cols_b, density, parallel_name);
+
+        // Create the log directory
+        if (create_directory(log_dir) != 0) {
+            fprintf(stderr, "Error creating log directory %s\n", log_dir);
+            return;
+        }
+
+        // Create directories for matrices A and B
+        snprintf(matrix_a_dir, sizeof(matrix_a_dir), "%s/matrix_a", log_dir);
+        snprintf(matrix_b_dir, sizeof(matrix_b_dir), "%s/matrix_b", log_dir);
+
+        if (create_directory(matrix_a_dir) != 0 || create_directory(matrix_b_dir) != 0) {
+            fprintf(stderr, "Error creating matrix directories\n");
+            return;
+        }
     }
 
-    char matrix_a_dir[512], matrix_b_dir[512];
-    snprintf(matrix_a_dir, sizeof(matrix_a_dir), "%s/matrix_a", log_dir);
-    snprintf(matrix_b_dir, sizeof(matrix_b_dir), "%s/matrix_b", log_dir);
+    printf("Process %d: Generating and compressing matrices for density %.2f using %s...\n", rank, density, parallel_name);
 
-    if (create_directory(matrix_a_dir) != 0 || create_directory(matrix_b_dir) != 0) {
-        fprintf(stderr, "Error creating matrix directories\n");
-        return;
-    }
-
-    printf("Generating and compressing matrices for density %.2f using %s...\n", density, parallel_name);
-
-    // Generate and compress matrices
+    // Generate and compress matrices on all processes
     int** dense_a = generate_random_matrix(rows_a, cols_a, density);
-    CompressedMatrix* compressed_a = compress_matrix_and_write(dense_a, rows_a, cols_a, density, matrix_a_dir);
-    freeMatrix(dense_a, rows_a);
+    CompressedMatrix* compressed_a = compress_matrix(dense_a, rows_a, cols_a, density);
 
     int** dense_b = generate_random_matrix(cols_a, cols_b, density);
-    CompressedMatrix* compressed_b = compress_matrix_and_write(dense_b, cols_a, cols_b, density, matrix_b_dir);
+    CompressedMatrix* compressed_b = compress_matrix(dense_b, cols_a, cols_b, density);
+
+    // Only the root process writes the compressed matrices to files
+    if (rank == 0) {
+        // Write the already compressed matrices to files
+        write_compressed_matrix(compressed_a, rows_a, matrix_a_dir);
+        write_compressed_matrix(compressed_b, cols_a, matrix_b_dir);
+    }
+
+    // Free the dense matrices after everything is done
+    freeMatrix(dense_a, rows_a);
     freeMatrix(dense_b, cols_a);
 
     // Get maximum number of threads for OpenMP
     const int max_threads = omp_get_max_threads();
     if (parallel_type != MULT_SEQUENTIAL) {
-        printf("Maximum number of threads available: %d\n", max_threads);
-    }
-    char performance_file[512];
-    snprintf(performance_file, sizeof(performance_file), "%s/performance_%dx%dx%d_%.2f_%s.csv",
-             log_dir, rows_a, cols_a, cols_b, density, parallel_name);
-
-    FILE* perf_file = fopen(performance_file, "w");
-    if (perf_file == NULL) {
-        fprintf(stderr, "Error opening performance file %s: %s\n", performance_file, strerror(errno));
-        return;
+        printf("Process %d: Maximum number of threads available: %d\n", rank, max_threads);
     }
 
-    // Write header information
-    fprintf(perf_file, "Matrix A: %d x %d\n", rows_a, cols_a);
-    fprintf(perf_file, "Matrix B: %d x %d\n", cols_a, cols_b);
-    fprintf(perf_file, "Density: %.2f\n", density);
-    fprintf(perf_file, "Parallelisation: %s\n\n", parallel_name);
-    fprintf(perf_file, "CPU Time (s),Wall Clock Time (s)\n");
+    // Performance file variables
+    FILE* perf_file = NULL;
+    char performance_file[512] = "";
+
+    // Only the root process handles performance logging
+    if (rank == 0) {
+        snprintf(performance_file, sizeof(performance_file), "%s/performance_%dx%dx%d_%.2f_%s.csv",
+                 log_dir, rows_a, cols_a, cols_b, density, parallel_name);
+
+        perf_file = fopen(performance_file, "w");
+        if (perf_file == NULL) {
+            fprintf(stderr, "Error opening performance file %s: %s\n", performance_file, strerror(errno));
+            return;
+        }
+
+        // Write header information to the performance file
+        fprintf(perf_file, "Matrix A: %d x %d\n", rows_a, cols_a);
+        fprintf(perf_file, "Matrix B: %d x %d\n", cols_a, cols_b);
+        fprintf(perf_file, "Density: %.2f\n", density);
+        fprintf(perf_file, "Parallelisation: %s\n\n", parallel_name);
+        fprintf(perf_file, "CPU Time (s),Wall Clock Time (s)\n");
+    }
 
     // Set thread count for OpenMP
     if (parallel_type == MULT_OMP) {
@@ -156,8 +236,8 @@ void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, flo
         {
             #pragma omp single
             {
-                printf("Using %d thread(s) for density %.2f with %s...\n",
-                       omp_get_num_threads(), density, parallel_name);
+                printf("Process %d: Using %d thread(s) for density %.2f with %s...\n",
+                       rank, omp_get_num_threads(), density, parallel_name);
             }
         }
     }
@@ -167,18 +247,25 @@ void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, flo
     DenseMatrix* result = multiply_matrices(compressed_a, compressed_b, parallel_type);
     TOCK(multiply_time);
 
-    // Log timing results
-    fprintf(perf_file, "%.6f,%.6f\n", multiply_time.cpu_time, multiply_time.wall_time);
+    // Only the root process logs timing results
+    if (rank == 0 && perf_file != NULL) {
+        fprintf(perf_file, "%.6f,%.6f\n", multiply_time.cpu_time, multiply_time.wall_time);
+        fclose(perf_file);
+    }
 
     // Clean up
-    free_dense_matrix(result);
-    fclose(perf_file);
+    if (result != NULL) {
+        free_dense_matrix(result);
+    }
     free_compressed_matrix(compressed_a);
     free_compressed_matrix(compressed_b);
 
-    printf("Test completed for matrix size %dx%dx%d with density %.2f using %s\n",
-           rows_a, cols_a, cols_b, density, parallel_name);
-    printf("Performance data written to %s\n", performance_file);
+    // Only the root process prints the final messages
+    if (rank == 0) {
+        printf("Test completed for matrix size %dx%dx%d with density %.2f using %s\n",
+               rows_a, cols_a, cols_b, density, parallel_name);
+        printf("Performance data written to %s\n", performance_file);
+    }
 }
 
 int main(int argc, char** argv) {
@@ -206,48 +293,69 @@ int main(int argc, char** argv) {
         }
     }
 
-    printf("Profiling matrix multiplication using %s\n", get_parallelisation_name(parallel_type));
-    printf("SIZE: %d\tDENSITY: %.2f\n", gen_size, density);
-
-    // Set up directories
-    char project_root[1024];
-    if (getcwd(project_root, sizeof(project_root)) == NULL) {
-        perror("getcwd");
-        return 1;
+    int rank = 0, size = 1;
+    if (parallel_type == MULT_MPI) {
+        // Initialize MPI
+        MPI_Init(&argc, &argv);
+        // Get the rank and size
+        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+        MPI_Comm_size(MPI_COMM_WORLD, &size);
+        printf("Process %d of %d initialized\n", rank, size);
     }
 
-    char *build_pos = strstr(project_root, "/build");
-    if (build_pos != NULL) {
-        *build_pos = '\0';
-    }
+    // Only the root process    should perform directory setup
+    if (rank == 0) {
+        printf("Profiling matrix multiplication using %s\n", get_parallelisation_name(parallel_type));
+        printf("SIZE: %d\tDENSITY: %.2f\n", gen_size, density);
 
-    char logs_dir[1024];
-    snprintf(logs_dir, sizeof(logs_dir), "%s/logs", project_root);
-    if (create_directory(logs_dir) != 0) {
-        fprintf(stderr, "Failed to create logs directory\n");
-        return 1;
-    }
+        // Get project root directory
+        char* project_root = get_project_root();
+        if (project_root == NULL) {
+            fprintf(stderr, "Failed to determine project root directory\n");
+            return 1;
+        }
 
-    char *run_dir_name = generate_unique_directory("run");
-    if (run_dir_name == NULL) {
-        fprintf(stderr, "Failed to generate unique directory name\n");
-        return 1;
-    }
+        // Create logs directory in project root
+        char logs_dir[PATH_MAX];
+        snprintf(logs_dir, sizeof(logs_dir), "%s/logs", project_root);
+        if (create_directory(logs_dir) != 0) {
+            fprintf(stderr, "Failed to create logs directory\n");
+            free(project_root);
+            return 1;
+        }
 
-    char run_dir_path[1024];
-    snprintf(run_dir_path, sizeof(run_dir_path), "%s/%s", logs_dir, run_dir_name);
-    if (create_directory(run_dir_path) != 0) {
-        fprintf(stderr, "Failed to create run directory\n");
+        char* run_dir_name = generate_unique_directory("run");
+        if (run_dir_name == NULL) {
+            fprintf(stderr, "Failed to generate unique directory name\n");
+            free(project_root);
+            return 1;
+        }
+
+        char run_dir_path[PATH_MAX];
+        snprintf(run_dir_path, sizeof(run_dir_path), "%s/%s", logs_dir, run_dir_name);
+        if (create_directory(run_dir_path) != 0) {
+            fprintf(stderr, "Failed to create run directory\n");
+            free(project_root);
+            free(run_dir_name);
+            return 1;
+        }
+
+        printf("Test directory: %s\n", run_dir_path);
+
+        // Run the test with specified parameters
+        test_parallel_matrix_multiplication(gen_size, gen_size, gen_size, density, run_dir_path, parallel_type);
+
+        printf("Test completed. Results written to %s\n", run_dir_path);
+        free(project_root);
         free(run_dir_name);
-        return 1;
+    } else {
+        // Non-root processes need to participate in the multiplication
+        test_parallel_matrix_multiplication(gen_size, gen_size, gen_size, density, "", parallel_type);
     }
 
-    printf("Test directory: %s\n", run_dir_path);
-
-    // Run the test with specified parameters
-    test_parallel_matrix_multiplication(gen_size, gen_size, gen_size, density, run_dir_path, parallel_type);
-
-    printf("Test completed. Results written to %s\n", run_dir_path);
-    free(run_dir_name);
+    // Finalize MPI
+    if (parallel_type == MULT_MPI) {
+        MPI_Finalize();
+    }
     return 0;
 }
