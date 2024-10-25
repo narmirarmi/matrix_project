@@ -5,7 +5,7 @@
 #include "timing.h"
 #include <omp.h>
 
-DenseMatrix* multiply_matrices(const CompressedMatrix* A, const CompressedMatrix* B, ScheduleType schedule_type) {
+DenseMatrix* multiply_matrices(const CompressedMatrix* A, const CompressedMatrix* B, parallelisation_type parallelisation_type) {
     if (A->num_cols != B->num_rows) {
         fprintf(stderr, "Error: Incompatible matrix dimensions for multiplication\n");
         return NULL;
@@ -24,7 +24,7 @@ DenseMatrix* multiply_matrices(const CompressedMatrix* A, const CompressedMatrix
     TICK(multiply_time);
 
     // Perform matrix multiplication with Sequential, OMP or MPI multiplication
-    switch (schedule_type) {
+    switch (parallelisation_type) {
         case MULT_SEQUENTIAL:for (size_t i = 0; i < A->num_rows; i++) {
                 for (size_t k = 0; k < A->row_sizes[i]; k++) {
                     int a_val = A->B[i][k];
