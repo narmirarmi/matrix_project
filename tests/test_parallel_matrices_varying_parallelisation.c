@@ -128,9 +128,10 @@ void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, flo
     freeMatrix(dense_b, cols_a);
 
     // Get maximum number of threads for OpenMP
-    int max_threads = omp_get_max_threads();
-    printf("Maximum number of threads available: %d\n", max_threads);
-
+    const int max_threads = omp_get_max_threads();
+    if (parallel_type != MULT_SEQUENTIAL) {
+        printf("Maximum number of threads available: %d\n", max_threads);
+    }
     char performance_file[512];
     snprintf(performance_file, sizeof(performance_file), "%s/performance_%dx%dx%d_%.2f_%s.csv",
              log_dir, rows_a, cols_a, cols_b, density, parallel_name);
