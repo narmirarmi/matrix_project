@@ -141,7 +141,6 @@ void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, flo
             // Explicitly set the number of threads for OpenMP
             omp_set_num_threads(num_threads);
 
-            // Ensure the change takes effect
             #pragma omp parallel
             {
                 #pragma omp single
@@ -156,10 +155,9 @@ void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, flo
             DenseMatrix* result = multiply_matrices(compressed_a, compressed_b, schedule_types[s]);
             TOCK(multiply_time);
 
-            // Log results in CSV format
+            // Log results
             fprintf(perf_file, "%.6f,%.6f\n", multiply_time.cpu_time, multiply_time.wall_time);
 
-            // Clean up result
             free_dense_matrix(result);
 
             fclose(perf_file);
@@ -168,7 +166,6 @@ void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, flo
         }
     }
 
-    // Clean up
     free_compressed_matrix(compressed_a);
     free_compressed_matrix(compressed_b);
 
@@ -179,11 +176,10 @@ void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, flo
 }
 
 int main() {
-    srand(time(NULL));  // Seed the random number generator
+    srand(time(NULL));
 
     printf("Starting matrix multiplication test...\n");
 
-    // Get the path to the project root directory (parent of build)
     char project_root[1024];
     if (getcwd(project_root, sizeof(project_root)) == NULL) {
         perror("getcwd");
@@ -191,10 +187,9 @@ int main() {
     }
     char *build_pos = strstr(project_root, "/build");
     if (build_pos != NULL) {
-        *build_pos = '\0';  // Truncate at "/build"
+        *build_pos = '\0';
     }
 
-    // Create logs directory in the project root
     char logs_dir[1024];
     snprintf(logs_dir, sizeof(logs_dir), "%s/logs", project_root);
     if (create_directory(logs_dir) != 0) {
@@ -202,7 +197,7 @@ int main() {
         return 1;
     }
 
-    // Generate unique directory name for this run
+    // Generate unique directory name
     char *run_dir_name = generate_unique_directory("run");
     if (run_dir_name == NULL) {
         fprintf(stderr, "Failed to generate unique directory name\n");

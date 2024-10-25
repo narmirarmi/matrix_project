@@ -228,7 +228,6 @@ int main() {
     test_parallel_matrix_multiplication(100000, 10000, 10000, 0.01f, run_dir_path);
     test_parallel_matrix_multiplication(100000, 10000, 10000, 0.02f, run_dir_path);
 
-    // Uncomment these lines to test with project requirement matrices
     // test_parallel_matrix_multiplication(100000, 100000, 100000, 0.01f, run_dir_path);
     // test_parallel_matrix_multiplication(100000, 100000, 100000, 0.02f, run_dir_path);
     // test_parallel_matrix_multiplication(100000, 100000, 100000, 0.05f, run_dir_path);

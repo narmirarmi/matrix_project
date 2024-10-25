@@ -13,7 +13,7 @@ CompressedMatrix* compress_matrix(int** matrix, const size_t rows, const size_t 
     compressed->num_rows = rows;
     compressed->num_cols = cols;
 
-    // Estimate the number of useful elements per row (+1)
+    // Estimate the number of useful elements per row (+1 for funsies)
     size_t estimated_non_zero_per_row = (size_t)(cols * density) + 1;
 
     // Allocate memory for B and C matrices
@@ -27,7 +27,7 @@ CompressedMatrix* compress_matrix(int** matrix, const size_t rows, const size_t 
         return NULL;
     }
 
-    // Use OpenMP to parallelize the compression
+    // parallelize compression
     #pragma omp parallel
     {
         #pragma omp for schedule(dynamic)
@@ -46,7 +46,7 @@ CompressedMatrix* compress_matrix(int** matrix, const size_t rows, const size_t 
             for (size_t j = 0; j < cols; j++) {
                 if (matrix[i][j] != 0) {
                     if (non_zero_count >= current_capacity) {
-                        // Check for potential overflow before reallocating
+                        // Check overflow before reallocating
                         if (current_capacity > SIZE_MAX / 2) {
                             fprintf(stderr, "Cannot safely resize array for row %zu\n", i);
                             break;
@@ -70,7 +70,7 @@ CompressedMatrix* compress_matrix(int** matrix, const size_t rows, const size_t 
                 }
             }
 
-            // If there are no non-zero elements in this row, store two consecutive 0s
+            // If there are only zeros in this row, store two 0s
             if (non_zero_count == 0) {
                 compressed->B[i][0] = 0;
                 compressed->B[i][1] = 0;

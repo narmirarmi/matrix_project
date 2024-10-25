@@ -1,0 +1,7 @@
+# TODO
+- Add timer for only multiplication of matrices
+- Write report
+
+
+original instance: ssh -i "/home/narmirarmi/Downloads/Imrans Key.pem" ubuntu@ec2-54-253-215-183.ap-southeast-2.compute.amazonaws.com
+cluster: pcluster ssh --cluster-name mpi-cluster -i /home/narmirarmi/Downloads/Imrans\ Key.pem
