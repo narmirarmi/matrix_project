@@ -103,39 +103,44 @@ void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, flo
     MPI_Comm_size(comm, &size);
 
     printf("[Process %d] began testing with size: %d\n", rank, size);
-    return;
 
     // Get parallelisation name for logging
     const char* parallel_name = get_parallelisation_name(parallel_type);
 
+    // get the logging directories (only visible to root node)
     char log_dir[512];
-    snprintf(log_dir, sizeof(log_dir), "%s/matrix_multiplication_%dx%dx%d_%.2f_%s",
+    char matrix_a_dir[512], matrix_b_dir[512];
+    CompressedMatrix* compressed_a;
+    CompressedMatrix* compressed_b;
+    if( rank == 0 ) {
+        snprintf(log_dir, sizeof(log_dir), "%s/matrix_multiplication_%dx%dx%d_%.2f_%s",
              base_dir, rows_a, cols_a, cols_b, density, parallel_name);
 
-    if (create_directory(log_dir) != 0) {
-        fprintf(stderr, "Error creating log directory %s\n", log_dir);
-        return;
+        if (create_directory(log_dir) != 0) {
+            fprintf(stderr, "Error creating log directory %s\n", log_dir);
+            return;
+        }
+
+        snprintf(matrix_a_dir, sizeof(matrix_a_dir), "%s/matrix_a", log_dir);
+        snprintf(matrix_b_dir, sizeof(matrix_b_dir), "%s/matrix_b", log_dir);
+
+        if (create_directory(matrix_a_dir) != 0 || create_directory(matrix_b_dir) != 0) {
+            fprintf(stderr, "Error creating matrix directories\n");
+            MPI_Abort(MPI_COMM_WORLD, 1);
+            return;
+        }
+
+        printf("Generating and compressing matrices for density %.2f using %s...\n", density, parallel_name);
+
+        // Generate and compress matrices
+        int** dense_a = generate_random_matrix(rows_a, cols_a, density);
+        compressed_a = compress_matrix_and_write(dense_a, rows_a, cols_a, density, matrix_a_dir);
+        freeMatrix(dense_a, rows_a);
+
+        int** dense_b = generate_random_matrix(cols_a, cols_b, density);
+        compressed_b = compress_matrix_and_write(dense_b, cols_a, cols_b, density, matrix_b_dir);
+        freeMatrix(dense_b, cols_a);
     }
-
-    char matrix_a_dir[512], matrix_b_dir[512];
-    snprintf(matrix_a_dir, sizeof(matrix_a_dir), "%s/matrix_a", log_dir);
-    snprintf(matrix_b_dir, sizeof(matrix_b_dir), "%s/matrix_b", log_dir);
-
-    if (create_directory(matrix_a_dir) != 0 || create_directory(matrix_b_dir) != 0) {
-        fprintf(stderr, "Error creating matrix directories\n");
-        return;
-    }
-
-    printf("Generating and compressing matrices for density %.2f using %s...\n", density, parallel_name);
-
-    // Generate and compress matrices
-    int** dense_a = generate_random_matrix(rows_a, cols_a, density);
-    CompressedMatrix* compressed_a = compress_matrix_and_write(dense_a, rows_a, cols_a, density, matrix_a_dir);
-    freeMatrix(dense_a, rows_a);
-
-    int** dense_b = generate_random_matrix(cols_a, cols_b, density);
-    CompressedMatrix* compressed_b = compress_matrix_and_write(dense_b, cols_a, cols_b, density, matrix_b_dir);
-    freeMatrix(dense_b, cols_a);
 
     // Get maximum number of threads for OpenMP
     const int max_threads = omp_get_max_threads();
@@ -284,7 +289,7 @@ int main(int argc, char** argv) {
         printf("SIZE: %d\tDENSITY: %.2f\n", gen_size, density);
     }
 
-    // alla this shit to the other processes
+    // give alla this shit to the other processes
     MPI_Bcast(&run_dir_path_len, 1, MPI_INT, 0, MPI_COMM_WORLD);
     if( rank != 0) {
         run_dir_path = (char*)malloc(run_dir_path_len);
