@@ -17,7 +17,7 @@ add_executable(matrix_project
 
 # Create the test executable
 add_executable(run_tests
-        tests/test_matrix_operations.c
+        tests/test_parallel_matrices.c
         src/matrix_generation.c
         src/matrix_compression.c
         src/matrix_multiplication.c
