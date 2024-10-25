@@ -37,7 +37,13 @@ add_custom_target(test
 
 # If using OpenMP
 find_package(OpenMP)
+
+# If using MPI
+find_package(MPI REQUIRED)
+
 if(OpenMP_C_FOUND)
     target_link_libraries(matrix_project PUBLIC OpenMP::OpenMP_C)
     target_link_libraries(run_tests PUBLIC OpenMP::OpenMP_C)
 endif()
+
+target_link_libraries(matrix_project PRIVATE MPI::MPI_C)
