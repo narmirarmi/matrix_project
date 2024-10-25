@@ -55,80 +55,134 @@ DenseMatrix* multiply_matrices(const CompressedMatrix* A, const CompressedMatrix
             }
             break;
 
-        case MULT_MPI:
-            multiply_matrices_mpi(A, B, result);
+        case MULT_MPI: {
+            int rank, size;
+            MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+            MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+            // Debug output for initial state
+            printf("[Process %d] Starting MPI multiplication\n", rank);
+            printf("[Process %d] Matrix A: %zu x %zu, Matrix B: %zu x %zu\n",
+                   rank, A->num_rows, A->num_cols, B->num_rows, B->num_cols);
+
+            // Validate input matrices
+            if (A == NULL || B == NULL) {
+                fprintf(stderr, "[Process %d] Error: NULL matrix pointer\n", rank);
+                MPI_Abort(MPI_COMM_WORLD, 1);
+                return NULL;
+            }
+
+            // Validate matrix structures
+            if (A->B == NULL || A->C == NULL || B->B == NULL || B->C == NULL) {
+                fprintf(stderr, "[Process %d] Error: NULL matrix data pointers\n", rank);
+                MPI_Abort(MPI_COMM_WORLD, 1);
+                return NULL;
+            }
+
+            // Debug: Print row sizes for first few rows
+            printf("[Process %d] First row sizes - A: %zu, B: %zu\n",
+                   rank, A->row_sizes[0], B->row_sizes[0]);
+
+            // Calculate work distribution
+            size_t rows_per_proc = A->num_rows / size;
+            size_t remainder = A->num_rows % size;
+            size_t start_row = rank * rows_per_proc + (rank < remainder ? rank : remainder);
+            size_t num_rows = rows_per_proc + (rank < remainder ? 1 : 0);
+            size_t end_row = start_row + num_rows;
+
+            printf("[Process %d] Work distribution: rows %zu to %zu (total: %zu)\n",
+                    rank, start_row, end_row - 1, num_rows);
+
+            // Allocate temporary buffer for local results
+            printf("[Process %d] Allocating local result buffer for %zu rows\n", rank, num_rows);
+            int** local_result = malloc(num_rows * sizeof(int*));
+            if (local_result == NULL) {
+                fprintf(stderr, "[Process %d] Failed to allocate local result rows\n", rank);
+                MPI_Abort(MPI_COMM_WORLD, 1);
+                return NULL;
+            }
+
+            for (size_t i = 0; i < num_rows; i++) {
+                local_result[i] = calloc(result->cols, sizeof(int));
+                if (local_result[i] == NULL) {
+                    fprintf(stderr, "[Process %d] Failed to allocate local result columns\n", rank);
+                    MPI_Abort(MPI_COMM_WORLD, 1);
+                    return NULL;
+                }
+            }
+
+            // Perform local computation
+            printf("[Process %d] Starting local computation\n", rank);
+            for (size_t i = start_row; i < end_row; i++) {
+                size_t local_i = i - start_row;
+
+                // Debug: Periodically print progress
+                if (i % 1000 == 0) {
+                    printf("[Process %d] Processing row %zu\n", rank, i);
+                }
+
+                if (i >= A->num_rows) {
+                    fprintf(stderr, "[Process %d] Error: Row index %zu exceeds matrix dimensions\n",
+                            rank, i);
+                    continue;
+                }
+
+                for (size_t k = 0; k < A->row_sizes[i]; k++) {
+                    int a_val = A->B[i][k];
+                    size_t a_col = A->C[i][k];
+
+                    if (a_col >= B->num_rows) {
+                        fprintf(stderr, "[Process %d] Error: Invalid column index %zu in matrix A\n",
+                                rank, a_col);
+                        continue;
+                    }
+
+                    for (size_t j = 0; j < B->row_sizes[a_col]; j++) {
+                        size_t b_col = B->C[a_col][j];
+
+                        if (b_col >= result->cols) {
+                            fprintf(stderr, "[Process %d] Error: Invalid column index %zu in matrix B\n",
+                                    rank, b_col);
+                            continue;
+                        }
+
+                        int b_val = B->B[a_col][j];
+                        result->data[i][b_col] += a_val * b_val;
+                    }
+                }
+            }
+
+            printf("[Process %d] Local computation completed\n", rank);
+
+            // Gather results
+            printf("[Process %d] Starting result gathering\n", rank);
+            for (size_t i = 0; i < num_rows; i++) {
+                size_t global_row = start_row + i;
+                printf("[Process %d] Reducing row %zu\n", rank, global_row);
+
+                MPI_Reduce(local_result[i], result->data[global_row],
+                          result->cols, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+            }
+
+            printf("[Process %d] Result gathering completed\n", rank);
+
+            // Clean up local memory
+            printf("[Process %d] Cleaning up local memory\n", rank);
+            for (size_t i = 0; i < num_rows; i++) {
+                free(local_result[i]);
+            }
+            free(local_result);
+
+            // Synchronize all processes
+            MPI_Barrier(MPI_COMM_WORLD);
+            printf("[Process %d] MPI multiplication completed\n", rank);
             break;
+        }
     }
 
     TOCK(multiply_time);
     return result;
 }
-
-void multiply_matrices_mpi(const CompressedMatrix* A, const CompressedMatrix* B, DenseMatrix* result) {
-
-    // mpi stuff
-    int rank, size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
-
-    printf("computing from rank %d out of %d processors\n",
-        rank, size);
-
-    //get rows per process and the remainder
-    size_t rows_per_proc = A->num_rows / size;
-    size_t remainder = A->num_rows % size;
-
-    // Calculate start and end rows for this process
-    size_t start_row = rank * rows_per_proc + (rank < remainder ? rank : remainder);
-    size_t num_rows = rows_per_proc + (rank < remainder ? 1 : 0);
-    size_t end_row = start_row + num_rows;
-
-    // Allocate local result matrix
-    int** local_result = (int**)malloc(num_rows * sizeof(int*));
-    for (size_t i = 0; i < num_rows; i++) {
-        local_result[i] = (int*)calloc(result->cols, sizeof(int));
-    }
-
-    //perform local computation
-    for (size_t i = start_row; i < end_row; i++) {
-        size_t local_i = i - start_row;  // Convert to local index
-        for (size_t k = 0; k < A->row_sizes[i]; k++) {
-            int a_val = A->B[i][k];
-            size_t a_col = A->C[i][k];
-            for (size_t j = 0; j < B->row_sizes[a_col]; j++) {
-                size_t b_col = B->C[a_col][j];
-                int b_val = B->B[a_col][j];
-                local_result[local_i][b_col] += a_val * b_val;
-            }
-        }
-    }
-
-    //get results from all processes
-    for (size_t i = 0; i < num_rows; i++) {
-        size_t global_row = start_row + i;
-        MPI_Allreduce(MPI_IN_PLACE, local_result[i], result->cols,
-                      MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-
-        // Copy local result to global result matrix
-        if (rank == 0) {
-            memcpy(result->data[global_row], local_result[i],
-                   result->cols * sizeof(int));
-        }
-    }
-
-    // Broadcast the complete result to all processes
-    for (size_t i = 0; i < A->num_rows; i++) {
-        MPI_Bcast(result->data[i], result->cols, MPI_INT, 0, MPI_COMM_WORLD);
-    }
-
-    // Clean up local memory
-    for (size_t i = 0; i < num_rows; i++) {
-        free(local_result[i]);
-    }
-
-    free(local_result);
-}
-
 
 void free_dense_matrix(DenseMatrix* matrix) {
     for (size_t i = 0; i < matrix->rows; i++) {

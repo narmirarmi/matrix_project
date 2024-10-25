@@ -95,7 +95,13 @@ CompressedMatrix* compress_matrix_and_write(int** matrix, size_t rows, size_t co
 }
 
 void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, float density,
-                                      const char* base_dir, parallelisation_type parallel_type) {
+                                      const char* base_dir, parallelisation_type parallel_type,
+                                      MPI_Comm comm) {
+
+    int rank, size;
+    MPI_Comm_rank(comm, &rank);
+    MPI_Comm_size(comm, &size);
+
     // Get parallelisation name for logging
     const char* parallel_name = get_parallelisation_name(parallel_type);
 
@@ -182,41 +188,13 @@ void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, flo
     printf("Performance data written to %s\n", performance_file);
 }
 
-int main(int argc, char** argv) {
-    srand(time(NULL));
-
-    MPI_Init(NULL, NULL);
-
-    int opt;
-    parallelisation_type parallel_type = MULT_SEQUENTIAL;
-    int gen_size = DEFAULT_SIZE;
-    float density = DEFAULT_DENSITY;
-
-    while((opt = getopt(argc, argv, ":s:omt:")) != -1) {
-        switch(opt) {
-            case 's':
-                gen_size = atoi(optarg);
-                break;
-            case 'o':
-                parallel_type = MULT_OMP;
-                break;
-            case 'm':
-                parallel_type = MULT_MPI;
-                break;
-            case '?':
-                printf("FLAGS:\n\t-s [size]: set matrix size\n\t-o: use OpenMP\n\t-m: use MPI\n");
-                return 1;
-        }
-    }
-
-    printf("Profiling matrix multiplication using %s\n", get_parallelisation_name(parallel_type));
-    printf("SIZE: %d\tDENSITY: %.2f\n", gen_size, density);
+char* setup_dir_path() {
 
     // Set up directories
     char project_root[1024];
     if (getcwd(project_root, sizeof(project_root)) == NULL) {
         perror("getcwd");
-        return 1;
+        return "";
     }
 
     char *build_pos = strstr(project_root, "/build");
@@ -228,13 +206,13 @@ int main(int argc, char** argv) {
     snprintf(logs_dir, sizeof(logs_dir), "%s/logs", project_root);
     if (create_directory(logs_dir) != 0) {
         fprintf(stderr, "Failed to create logs directory\n");
-        return 1;
+        return "";
     }
 
     char *run_dir_name = generate_unique_directory("run");
     if (run_dir_name == NULL) {
         fprintf(stderr, "Failed to generate unique directory name\n");
-        return 1;
+        return "";
     }
 
     char run_dir_path[1024];
@@ -242,17 +220,83 @@ int main(int argc, char** argv) {
     if (create_directory(run_dir_path) != 0) {
         fprintf(stderr, "Failed to create run directory\n");
         free(run_dir_name);
-        return 1;
+        return "";
     }
 
     printf("Test directory: %s\n", run_dir_path);
 
-    // Run the test with specified parameters
-    test_parallel_matrix_multiplication(gen_size, gen_size, gen_size, density, run_dir_path, parallel_type);
+}
+
+int main(int argc, char** argv) {
+
+    MPI_Init(&argc, &argv);
+
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    MPI_Comm worker;
+    MPI_Comm_dup(MPI_COMM_WORLD, &worker);
+
+    parallelisation_type parallel_type = MULT_SEQUENTIAL;
+    int gen_size = DEFAULT_SIZE;
+    float density = DEFAULT_DENSITY;
+
+    int opt;
+
+    while((opt = getopt(argc, argv, ":s:omt:")) != -1) {
+        switch(opt) {
+            case 's':
+                gen_size = atoi(optarg);
+            break;
+            case 'o':
+                parallel_type = MULT_OMP;
+            break;
+            case 'm':
+                parallel_type = MULT_MPI;
+            break;
+            case '?':
+                printf("FLAGS:\n\t-s [size]: set matrix size\n\t-o: use OpenMP\n\t-m: use MPI\n");
+            return 1;
+        }
+    }
+
+    char* run_dir_path;
+    int run_dir_path_len;
+    // root node only
+    if( rank == 0 ) {
+        srand(time(NULL));
+
+        run_dir_path = setup_dir_path();
+        if(run_dir_path[0] == '\0') {
+            MPI_Abort(MPI_COMM_WORLD, 1);
+            exit(0);
+        }
+
+        run_dir_path_len = strlen(run_dir_path) + 1;
+
+        printf("Profiling matrix multiplication using %s\n", get_parallelisation_name(parallel_type));
+        printf("SIZE: %d\tDENSITY: %.2f\n", gen_size, density);
+    }
+
+    // alla this shit to the other processes
+    MPI_Bcast(&run_dir_path_len, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    if( rank != 0) {
+        run_dir_path = (char*)malloc(run_dir_path_len);
+    }
+    MPI_Bcast((void*)run_dir_path, run_dir_path_len, MPI_CHAR, 0, MPI_COMM_WORLD);
+    if( rank != 0) {
+        printf("\t[Process %d] Discovered path: %s\n", rank, run_dir_path);
+    }
+
+    // Barrier to ensure all processes have received the data
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    test_parallel_matrix_multiplication(gen_size, gen_size, gen_size, density, run_dir_path, parallel_type, worker);
 
     printf("Test completed. Results written to %s\n", run_dir_path);
 
-    free(run_dir_name);
+    free(run_dir_path);
     MPI_Finalize();
 
     return 0;
