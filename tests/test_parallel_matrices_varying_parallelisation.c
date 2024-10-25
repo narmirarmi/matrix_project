@@ -102,6 +102,9 @@ void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, flo
     MPI_Comm_rank(comm, &rank);
     MPI_Comm_size(comm, &size);
 
+    printf("[Process %d] began testing with size: %d\n", rank, size);
+    return;
+
     // Get parallelisation name for logging
     const char* parallel_name = get_parallelisation_name(parallel_type);
 
@@ -224,6 +227,7 @@ char* setup_dir_path() {
     }
 
     printf("Test directory: %s\n", run_dir_path);
+    return run_dir_path;
 
 }
 
@@ -263,6 +267,7 @@ int main(int argc, char** argv) {
 
     char* run_dir_path;
     int run_dir_path_len;
+
     // root node only
     if( rank == 0 ) {
         srand(time(NULL));
@@ -296,7 +301,9 @@ int main(int argc, char** argv) {
 
     printf("Test completed. Results written to %s\n", run_dir_path);
 
-    free(run_dir_path);
+    // Another to ensure all processes have finished processing
+    MPI_Barrier(MPI_COMM_WORLD);
+
     MPI_Finalize();
 
     return 0;
