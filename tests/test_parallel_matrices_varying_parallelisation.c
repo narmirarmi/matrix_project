@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <omp.h>
+#include <mpi.h>
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
@@ -184,6 +185,8 @@ void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, flo
 int main(int argc, char** argv) {
     srand(time(NULL));
 
+    MPI_Init(NULL, NULL);
+
     int opt;
     parallelisation_type parallel_type = MULT_SEQUENTIAL;
     int gen_size = DEFAULT_SIZE;
@@ -248,6 +251,9 @@ int main(int argc, char** argv) {
     test_parallel_matrix_multiplication(gen_size, gen_size, gen_size, density, run_dir_path, parallel_type);
 
     printf("Test completed. Results written to %s\n", run_dir_path);
+
     free(run_dir_name);
+    MPI_Finalize();
+
     return 0;
 }

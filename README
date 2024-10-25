@@ -8,9 +8,15 @@
     - Run tests
     - Expect 20-40% worse performance than MPI
 
-
 - Write report
 
 
 original instance: ssh -i "/home/narmirarmi/Downloads/Imrans Key.pem" ubuntu@ec2-54-253-215-183.ap-southeast-2.compute.amazonaws.com
 cluster: pcluster ssh --cluster-name mpi-cluster -i /home/narmirarmi/Downloads/Imrans\ Key.pem
+
+# Report stuff
+
+## Row Compression Algorithm
+We reused the OpenMP row compression algorithm from the previous project, and created a new row compression algorithm using MPI
+
+##

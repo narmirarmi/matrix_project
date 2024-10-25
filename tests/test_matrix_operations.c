@@ -180,6 +180,7 @@ void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, flo
 }
 
 int main() {
+
     srand(time(NULL));  // Seed the random number generator
 
     printf("Starting matrix multiplication test...\n");

@@ -20,6 +20,9 @@ typedef struct {
 // FUnction to multiply two compressed matrices and return a dense matrix
 DenseMatrix* multiply_matrices(const CompressedMatrix* A, const CompressedMatrix* B, parallelisation_type schedule_type);
 
+//function to multiply matrices with MPI
+void multiply_matrices_mpi(const CompressedMatrix* A, const CompressedMatrix* B, DenseMatrix* result);
+
 // Function to free a dense matrix
 void free_dense_matrix(DenseMatrix* matrix);
 
