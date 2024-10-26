@@ -85,7 +85,7 @@ CompressedMatrix* compress_matrix_with_mpi(int** matrix, const size_t rows, cons
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    // Flatten the matrix at root
+    // root has FLAT matrix
     int* flat_matrix = NULL;
     if (rank == 0) {
         flat_matrix = malloc(rows * cols * sizeof(int));
@@ -98,7 +98,7 @@ CompressedMatrix* compress_matrix_with_mpi(int** matrix, const size_t rows, cons
         }
     }
 
-    // Compute local_rows for each process
+    // compute locally at each process
     size_t* local_rows_array = malloc(size * sizeof(size_t));
     int* sendcounts = malloc(size * sizeof(int));
     int* displs = malloc(size * sizeof(int));
@@ -135,10 +135,10 @@ CompressedMatrix* compress_matrix_with_mpi(int** matrix, const size_t rows, cons
 
     MPI_Scatterv(flat_matrix, sendcounts, displs, MPI_INT, local_matrix, local_rows * cols, MPI_INT, 0, MPI_COMM_WORLD);
 
-    // Compress local matrix
+    // compress localy at each process
     CompressedMatrix* local_compressed = compress_local_matrix(local_matrix, local_rows, cols, density);
 
-    // Serialize compressed data
+    // serialize data so we can send it to root
     size_t total_size = sizeof(size_t); // number of local_rows
     for (size_t i = 0; i < local_rows; i++) {
         size_t row_size = local_compressed->row_sizes[i];
@@ -175,9 +175,7 @@ CompressedMatrix* compress_matrix_with_mpi(int** matrix, const size_t rows, cons
         ptr += row_size * sizeof(int);
     }
 
-    // Send total_size and buffer to root
     if (rank == 0) {
-        // Root process
         size_t* total_sizes = malloc(size * sizeof(size_t));
         char** recv_buffers = malloc(size * sizeof(char*));
         if (!total_sizes || !recv_buffers) {
@@ -201,7 +199,7 @@ CompressedMatrix* compress_matrix_with_mpi(int** matrix, const size_t rows, cons
             MPI_Recv(recv_buffers[r], total_sizes[r], MPI_BYTE, r, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         }
 
-        // Reconstruct compressed matrix
+        // root constructs from received data
         CompressedMatrix* compressed = malloc(sizeof(CompressedMatrix));
         if (!compressed) {
             fprintf(stderr, "Failed to allocate CompressedMatrix\n");
@@ -282,7 +280,7 @@ CompressedMatrix* compress_matrix_with_mpi(int** matrix, const size_t rows, cons
         free(displs);
         return compressed;
     } else {
-        // Non-root processes
+        // non-root
         MPI_Send(&total_size, 1, MPI_UNSIGNED_LONG_LONG, 0, 0, MPI_COMM_WORLD);
         MPI_Send(buffer, total_size, MPI_BYTE, 0, 0, MPI_COMM_WORLD);
 
@@ -293,7 +291,6 @@ CompressedMatrix* compress_matrix_with_mpi(int** matrix, const size_t rows, cons
         free(local_rows_array);
         free(sendcounts);
         free(displs);
-        // Non-root processes return NULL
         return NULL;
     }
 }
