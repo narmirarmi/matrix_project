@@ -16,7 +16,7 @@ CompressedMatrix* compress_matrix(int** matrix, const size_t rows, const size_t 
     // Estimate the number of useful elements per row (+1 for funsies)
     size_t estimated_non_zero_per_row = (size_t)(cols * density) + 1;
 
-    // Allocate memory for B and C matrices
+    // allocate memory for B and C matrices
     compressed->B = malloc(rows * sizeof(int*));
     compressed->C = malloc(rows * sizeof(int*));
     compressed->row_sizes = calloc(rows, sizeof(size_t));

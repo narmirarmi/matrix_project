@@ -8,7 +8,6 @@
 #include <sys/stat.h>
 #include "matrix_generation.h"
 #include "matrix_compression.h"
-#include "mpi_matrix_compression.h"
 #include "matrix_multiplication.h"
 #include "timing.h"
 #include <mpi.h>
@@ -17,8 +16,8 @@
 
 #define MAX_TIME_SECONDS 650
 #define NUM_RUNS 1
-#define DEFAULT_DENSITY 0.02
-#define DEFAULT_SIZE 40000
+#define DEFAULT_DENSITY 0.01
+#define DEFAULT_SIZE 30000
 
 char* get_project_root() {
     char* project_root = malloc(PATH_MAX * sizeof(char));
@@ -147,7 +146,7 @@ void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, flo
     }
 
     // Seed the random number generator
-    srand(42 + rank);  // Different seed for each process
+    srand(42);
 
     // Get parallelisation name for logging
     const char* parallel_name = get_parallelisation_name(parallel_type);
@@ -181,74 +180,29 @@ void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, flo
         }
     }
 
-    // Broadcast the directories to all processes
-    if (parallel_type == MULT_MPI) {
-        MPI_Bcast(log_dir, 512, MPI_CHAR, 0, MPI_COMM_WORLD);
-        MPI_Bcast(matrix_a_dir, 512, MPI_CHAR, 0, MPI_COMM_WORLD);
-        MPI_Bcast(matrix_b_dir, 512, MPI_CHAR, 0, MPI_COMM_WORLD);
-    }
-
     printf("Process %d: Generating and compressing matrices for density %.2f using %s...\n", rank, density, parallel_name);
 
     // Generate and compress matrices on all processes
-    int** dense_a = NULL;
-    int** dense_b = NULL;
-    CompressedMatrix* compressed_a = NULL;
-    CompressedMatrix* compressed_b = NULL;
+    int** dense_a = generate_random_matrix(rows_a, cols_a, density);
+    CompressedMatrix* compressed_a = compress_matrix(dense_a, rows_a, cols_a, density);
 
-    if (parallel_type == MULT_MPI) {
-        // Calculate local rows for matrix A
-        size_t local_rows_a = rows_a / size;
-        size_t remainder_a = rows_a % size;
-        if ((size_t)rank < remainder_a) {
-            local_rows_a++;
-        }
-
-        // Calculate local rows for matrix B (columns of A)
-        size_t local_rows_b = cols_a / size;
-        size_t remainder_b = cols_a % size;
-        if ((size_t)rank < remainder_b) {
-            local_rows_b++;
-        }
-
-        // Generate local matrices
-        dense_a = allocateMatrix(local_rows_a, cols_a);
-        initialiseMatrix(dense_a, local_rows_a, cols_a, density);
-
-        dense_b = allocateMatrix(local_rows_b, cols_b);
-        initialiseMatrix(dense_b, local_rows_b, cols_b, density);
-
-        // Compress matrices using MPI functions
-        compressed_a = compress_matrix_with_mpi(dense_a, local_rows_a, cols_a, density, MPI_COMM_WORLD);
-        compressed_b = compress_matrix_with_mpi(dense_b, local_rows_b, cols_b, density, MPI_COMM_WORLD);
-
-        // Free local dense matrices
-        freeMatrix(dense_a, local_rows_a);
-        freeMatrix(dense_b, local_rows_b);
-
-    } else {
-        // Non-MPI version
-        dense_a = generate_random_matrix(rows_a, cols_a, density);
-        compressed_a = compress_matrix(dense_a, rows_a, cols_a, density);
-
-        dense_b = generate_random_matrix(cols_a, cols_b, density);
-        compressed_b = compress_matrix(dense_b, cols_a, cols_b, density);
-
-        // Free the dense matrices after compression
-        freeMatrix(dense_a, rows_a);
-        freeMatrix(dense_b, cols_a);
-    }
+    int** dense_b = generate_random_matrix(cols_a, cols_b, density);
+    CompressedMatrix* compressed_b = compress_matrix(dense_b, cols_a, cols_b, density);
 
     // Only the root process writes the compressed matrices to files
     if (rank == 0) {
-        // Write the compressed matrices to files
-        write_compressed_matrix(compressed_a, compressed_a->num_rows, matrix_a_dir);
-        write_compressed_matrix(compressed_b, compressed_b->num_rows, matrix_b_dir);
+        // Write the already compressed matrices to files
+        write_compressed_matrix(compressed_a, rows_a, matrix_a_dir);
+        write_compressed_matrix(compressed_b, cols_a, matrix_b_dir);
     }
+
+    // Free the dense matrices after everything is done
+    freeMatrix(dense_a, rows_a);
+    freeMatrix(dense_b, cols_a);
 
     // Get maximum number of threads for OpenMP
     const int max_threads = omp_get_max_threads();
-    if (parallel_type == MULT_OMP) {
+    if (parallel_type != MULT_SEQUENTIAL) {
         printf("Process %d: Maximum number of threads available: %d\n", rank, max_threads);
     }
 
@@ -277,7 +231,7 @@ void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, flo
 
     // Set thread count for OpenMP
     if (parallel_type == MULT_OMP) {
-        omp_set_num_threads(10);
+        omp_set_num_threads(max_threads);
         #pragma omp parallel
         {
             #pragma omp single
@@ -290,13 +244,7 @@ void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, flo
 
     // Perform multiplication and timing
     TICK(multiply_time);
-    DenseMatrix* result = NULL;
-
-    if (parallel_type == MULT_MPI) {
-        result = multiply_matrices(compressed_a, compressed_b, parallel_type);
-    } else {
-        result = multiply_matrices(compressed_a, compressed_b, parallel_type);
-    }
+    DenseMatrix* result = multiply_matrices(compressed_a, compressed_b, parallel_type);
     TOCK(multiply_time);
 
     // Only the root process logs timing results
@@ -307,11 +255,7 @@ void test_parallel_matrix_multiplication(int rows_a, int cols_a, int cols_b, flo
 
     // Clean up
     if (result != NULL) {
-        if (parallel_type == MULT_MPI) {
-            free_dense_matrix(result); // Adjust if needed for MPI
-        } else {
-            free_dense_matrix(result);
-        }
+        free_dense_matrix(result);
     }
     free_compressed_matrix(compressed_a);
     free_compressed_matrix(compressed_b);
@@ -359,8 +303,7 @@ int main(int argc, char** argv) {
         printf("Process %d of %d initialized\n", rank, size);
     }
 
-    // Only the root process should perform directory setup
-    char run_dir_path[PATH_MAX] = "";
+    // Only the root process    should perform directory setup
     if (rank == 0) {
         printf("Profiling matrix multiplication using %s\n", get_parallelisation_name(parallel_type));
         printf("SIZE: %d\tDENSITY: %.2f\n", gen_size, density);
@@ -388,6 +331,7 @@ int main(int argc, char** argv) {
             return 1;
         }
 
+        char run_dir_path[PATH_MAX];
         snprintf(run_dir_path, sizeof(run_dir_path), "%s/%s", logs_dir, run_dir_name);
         if (create_directory(run_dir_path) != 0) {
             fprintf(stderr, "Failed to create run directory\n");
@@ -397,26 +341,21 @@ int main(int argc, char** argv) {
         }
 
         printf("Test directory: %s\n", run_dir_path);
+
+        // Run the test with specified parameters
+        test_parallel_matrix_multiplication(gen_size, gen_size, gen_size, density, run_dir_path, parallel_type);
+
+        printf("Test completed. Results written to %s\n", run_dir_path);
         free(project_root);
         free(run_dir_name);
+    } else {
+        // Non-root processes need to participate in the multiplication
+        test_parallel_matrix_multiplication(gen_size, gen_size, gen_size, density, "", parallel_type);
     }
-
-    // Broadcast the run directory path to all processes
-    if (parallel_type == MULT_MPI) {
-        MPI_Bcast(run_dir_path, PATH_MAX, MPI_CHAR, 0, MPI_COMM_WORLD);
-    }
-
-    // Run the test with specified parameters
-    test_parallel_matrix_multiplication(gen_size, gen_size, gen_size, density, run_dir_path, parallel_type);
 
     // Finalize MPI
     if (parallel_type == MULT_MPI) {
         MPI_Finalize();
     }
-
-    if (rank == 0) {
-        printf("Test completed. Results written to %s\n", run_dir_path);
-    }
-
     return 0;
 }

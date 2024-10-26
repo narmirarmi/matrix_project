@@ -23,20 +23,19 @@ DenseMatrix* multiply_matrices(const CompressedMatrix* A, const CompressedMatrix
     result->cols = B->num_cols;
 
     if (parallelisation_type != MULT_MPI || rank == 0) {
-        // Allocate the full result matrix on the root process
+        // allocate results matrix
         result->data = malloc(result->rows * sizeof(int*));
         for (size_t i = 0; i < result->rows; i++) {
             result->data[i] = calloc(result->cols, sizeof(int));
         }
     } else {
-        // Non-root MPI processes do not allocate the full result matrix
         result->data = NULL;
     }
 
-    // Start timing
+    // start timer
     TICK(multiply_time);
 
-    // Perform matrix multiplication with Sequential, OMP or MPI multiplication
+    // perform matrix multiplication per the specified parallel type
     switch (parallelisation_type) {
         case MULT_SEQUENTIAL:for (size_t i = 0; i < A->num_rows; i++) {
                 for (size_t k = 0; k < A->row_sizes[i]; k++) {
@@ -68,7 +67,8 @@ DenseMatrix* multiply_matrices(const CompressedMatrix* A, const CompressedMatrix
             break;
 
         case MULT_MPI: {
-            // Calculate the range of rows for each process
+
+            // calculate the range of rows each process gets
             size_t total_rows = A->num_rows;
             size_t rows_per_process = total_rows / size;
             size_t remainder = total_rows % size;
@@ -77,16 +77,16 @@ DenseMatrix* multiply_matrices(const CompressedMatrix* A, const CompressedMatrix
             size_t end_row = start_row + rows_per_process + (rank < remainder ? 1 : 0);
             size_t local_rows = end_row - start_row;
 
-            
+            // debugging ztuffs
             printf("Process %d: computing rows %zu to %zu (total %zu rows)\n", rank, start_row, end_row - 1, local_rows);
 
-            // Allocate local data for each process
+            // allocate data slice to each process
             int** local_data = malloc(local_rows * sizeof(int*));
             for (size_t i = 0; i < local_rows; i++) {
                 local_data[i] = calloc(result->cols, sizeof(int));
             }
 
-            // Perform local computation
+            // run the algo local to the process
             for (size_t i = start_row; i < end_row; i++) {
                 for (size_t k = 0; k < A->row_sizes[i]; k++) {
                     int a_val = A->B[i][k];
@@ -102,14 +102,14 @@ DenseMatrix* multiply_matrices(const CompressedMatrix* A, const CompressedMatrix
             
             printf("Process %d: finished local computation\n", rank);
 
-            // Gather the local results at the root process
+            // gather results at the root
             if (rank == 0) {
-                // Copy local data to the result matrix
+                // copy process data to root matrix
                 for (size_t i = 0; i < local_rows; i++) {
                     memcpy(result->data[start_row + i], local_data[i], result->cols * sizeof(int));
                 }
 
-                // Receive data from other processes
+                // recieve from other processes
                 for (int proc = 1; proc < size; proc++) {
                     size_t proc_start_row = proc * rows_per_process + (proc < remainder ? proc : remainder);
                     size_t proc_end_row = proc_start_row + rows_per_process + (proc < remainder ? 1 : 0);
@@ -125,7 +125,7 @@ DenseMatrix* multiply_matrices(const CompressedMatrix* A, const CompressedMatrix
                 
                 printf("Root process: all data received and assembled\n");
             } else {
-                // Send local data to the root process
+                // send data to root processsss
                 for (size_t i = 0; i < local_rows; i++) {
                     
                     // printf("Process %d: sending data for row %zu to root process\n", rank, start_row + i);
@@ -136,13 +136,13 @@ DenseMatrix* multiply_matrices(const CompressedMatrix* A, const CompressedMatrix
                 printf("Process %d: all data sent to root process\n", rank);
             }
 
-            // Free local data
+            // free local data
             for (size_t i = 0; i < local_rows; i++) {
                 free(local_data[i]);
             }
             free(local_data);
 
-            // Non-root processes free the result structure
+            // free return structure if not root
             if (rank != 0) {
                 free(result);
                 result = NULL;
@@ -151,7 +151,7 @@ DenseMatrix* multiply_matrices(const CompressedMatrix* A, const CompressedMatrix
         }
     }
 
-    // Stop timing
+    // stop timer
     TOCK(multiply_time);
     return result;
 }
