@@ -273,7 +273,7 @@ def plot_density_impact(df, output_dir):
 
 def main():
     # Set paths
-    logs_dir = "/home/narmirarmi/CLionProjects/matrix_project/cmake-build-debug/logs"
+    logs_dir = "/home/narmirarmi/CLionProjects/logs"
     output_dir = "performance_plots"
 
     # Create output directory if it doesn't exist

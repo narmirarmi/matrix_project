@@ -28,6 +28,7 @@ add_executable(matrix_project
 # Create the test executable
 add_executable(run_tests
     tests/test_parallel_matrices_varying_parallelisation.c
+    src/mpi_matrix_compression.c
     ${COMMON_SOURCES}
 )
 
